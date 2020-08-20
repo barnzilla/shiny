@@ -48,7 +48,7 @@ server <- function(input, output) {
     
     # The note that accompanies the cash input field
     output$cash_note <- renderUI({
-      div(tags$strong("* "), "Note: 3% is removed from the cash before the rebalance computation is performed to account for USD to CAD conversion fees.", style = "background-color: #808080; color: #ffffff; border: 1px solid #808080; border-radius: 3px; width: 100%; padding: 10px;")
+      div("Note: 3% is removed from the cash before the rebalance computation is performed to account for USD to CAD conversion fees.", style = "background-color: #808080; color: #ffffff; border: 1px solid #808080; border-radius: 3px; width: 100%; padding: 10px;")
     })
     
     # The input field for the DGRC.TO quantity
