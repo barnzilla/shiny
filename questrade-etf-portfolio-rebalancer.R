@@ -22,6 +22,7 @@ ui <- navbarPage(
       width = 3
     ),
     mainPanel(
+      div(tags$strong("Disclaimer: "), "this Shiny app is intended for educational use only; it should NOT be construed as offering financial advice of any kind.", style = "background-color: #808080; color: #ffffff; border: 1px solid #808080; border-radius: 3px; width: 100%; padding: 10px;"), br(), br(),
       tableOutput("rebalancer") %>% withSpinner(color = "#808080"), br(), br(),
       width = 9
     )
