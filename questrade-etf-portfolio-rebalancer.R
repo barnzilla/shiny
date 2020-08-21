@@ -99,7 +99,7 @@ server <- function(input, output, session) {
       historical_prices[2:4] <- historical_prices[2:4] * historical_prices[6]
       historical_prices <- historical_prices[1:5]
       historical_market_value <- historical_prices * table$Quantity
-      table$pl <- (table$market_value - historical_market_value) / table$market_value * 100
+      table$pl <- (table$market_value - historical_market_value) / historical_market_value * 100
       total_pl <- ifelse(sum(table$market_value) == 0, "-", red_or_green(sum(table$pl, na.rm = TRUE)))
       table$pl <- sapply(table$pl, function(x) red_or_green(x))
       
