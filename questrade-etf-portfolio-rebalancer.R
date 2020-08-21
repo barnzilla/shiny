@@ -80,7 +80,7 @@ server <- function(input, output, session) {
         table$prop <- rep(paste0(custom_round(0), "%"), length(table$market_value))
         total_prop <- paste0(custom_round(0), "%")
       } else {
-        table$prop <- custom_round(unname(prop.table(table$market_value)) * 100)
+        table$prop <- paste0(custom_round(unname(prop.table(table$market_value)) * 100), "%")
         total_prop <- paste0(custom_round(sum(unname(prop.table(table$market_value)) * 100)), "%")
       }
       
