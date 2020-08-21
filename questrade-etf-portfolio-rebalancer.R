@@ -100,7 +100,7 @@ server <- function(input, output, session) {
       historical_prices <- historical_prices[1:5]
       historical_market_value <- historical_prices * table$Quantity
       table$pl <- (table$market_value - historical_market_value) / historical_market_value * 100
-      total_pl <- ifelse(sum(table$market_value) == 0, "-", red_or_green(sum(table$pl, na.rm = TRUE)))
+      total_pl <- ifelse(sum(table$market_value) == 0, "-", red_or_green((sum(table$market_value, na.rm = TRUE) - sum(historical_market_value, na.rm = TRUE)) / sum(historical_market_value, na.rm = TRUE) * 100))
       table$pl <- sapply(table$pl, function(x) red_or_green(x))
       
       # Add more semantic column names for select columns
