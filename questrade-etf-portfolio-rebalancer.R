@@ -163,7 +163,7 @@ server <- function(input, output, session) {
       } else if(x < 0) {
         return(paste0("<span style='color: red;'>", custom_round(x), "%</span>"))
       }  else if(x > 0) {
-        return(paste0("<span style='color: green;'>", custom_round(x), "%</span>"))
+        return(paste0("<span style='color: green;'>+", custom_round(x), "%</span>"))
       } else {
         return(paste0(custom_round(x), "%"))
       }
