@@ -9,7 +9,7 @@ library(shinycssloaders)
 ui <- navbarPage(
   windowTitle = HTML("Questrade ETF portfolio rebalancer"),
   title = div("Questrade ETF portfolio", style = "margin-right: 48px;"),
-  tabPanel("Rebalance",
+  tabPanel("Home",
     sidebarPanel(
       uiOutput("dgrc_to"),
       uiOutput("reet"),
@@ -18,7 +18,7 @@ ui <- navbarPage(
       uiOutput("xfh_to"),
       uiOutput("cash"),
       uiOutput("cash_note"), br(),
-      actionButton("rebalance", "Rebalance", icon("refresh")),
+      actionButton("rebalance", "Scrape Yahoo", icon("yahoo")),
       width = 3
     ),
     mainPanel(
@@ -33,13 +33,22 @@ ui <- navbarPage(
 )
 
 # Define server logic for the shiny app
-server <- function(input, output) {
+server <- function(input, output, session) {
     # Cache select data structures
     cached <- reactiveValues()
     
     # Round numeric values and output as formatted values
     custom_round <- function(x, n = 2) {
       return(format(round(as.numeric(x), n), nsmall = n, big.mark = ","))
+    }
+    
+    # Get yesterday's portfolio prices
+    get_historical_data <- function(ticker) {
+      period1 <- as.numeric(as.POSIXlt(Sys.Date() - 5))
+      period2 <- as.numeric(as.POSIXlt(Sys.Date()))
+      url <- paste0("https://query1.finance.yahoo.com/v7/finance/download/", ticker, "?period1=", period1, "&period2=", period2, "&interval=1d&events=history")
+      data <- suppressWarnings(read.csv(url))
+      return(data$Close[nrow(data)])
     }
     
     # The input field for the cash quantity
@@ -58,14 +67,18 @@ server <- function(input, output) {
     })
     
     # Main function
-    output$rebalancer <- eventReactive(input$rebalance, {
+    output$rebalancer <- function() {
       # Scrape prices and dates from Yahoo
       table <- scrape_data()
       
+      # Update quantities and market values if quantities change
+      table$Quantity <- c(input$dgrc_to, input$reet, input$spem, input$sptm, input$xfh_to)
+      table$market_value <- table$Quantity * table$Price
+      
       # Compute the portfolio allocations
       if(sum(table$market_value) == 0) {
-        table$prop <- rep(0, length(table$market_value))
-        total_prop <- "0%"
+        table$prop <- rep(paste0(custom_round(0), "%"), length(table$market_value))
+        total_prop <- paste0(custom_round(0), "%")
       } else {
         table$prop <- custom_round(unname(prop.table(table$market_value)) * 100)
         total_prop <- paste0(custom_round(sum(unname(prop.table(table$market_value)) * 100)), "%")
@@ -75,30 +88,36 @@ server <- function(input, output) {
       optimal_allocation <- c(30.6, 4.9, 4.9, 29.4, 28.2) * 100 / sum(c(30.6, 4.9, 4.9, 29.4, 28.2)) * 0.01
       
       # Compute total equity (remove 3% from cash to account for CAD to USD conversion fees)
-      total <- sum(table$market_value) + (input$cash * 0.97)
+      total_equity <- sum(table$market_value) + (input$cash * 0.97)
       
-      # Compute the buy/sell column
-      table$buy_sell <- floor(((optimal_allocation * total) - table$market_value) / table$Price)
-      table$buy_sell <- sapply(table$buy_sell, function(x) if(x > 0) paste0("+", x) else as.character(x))
+      # Compute the rebalance column
+      table$Rebalance <- floor(((optimal_allocation * total_equity) - table$market_value) / table$Price)
+      table$Rebalance <- sapply(table$Rebalance, function(x) if(x > 0) paste0("+", x) else as.character(x))
+      
+      # Compute profit/loss
+      historical_prices <- unname(sapply(c("DGRC.TO", "REET", "SPEM", "SPTM", "XFH.TO", "USDCAD%3DX"), function(x) get_historical_data(x)))
+      historical_prices[2:4] <- historical_prices[2:4] * historical_prices[6]
+      historical_prices <- historical_prices[1:5]
+      historical_market_value <- historical_prices * table$Quantity
+      table$pl <- (table$market_value - historical_market_value) / table$market_value * 100
+      total_pl <- ifelse(sum(table$market_value) == 0, "-", red_or_green(sum(table$pl, na.rm = TRUE)))
+      table$pl <- sapply(table$pl, function(x) red_or_green(x))
       
       # Add more semantic column names for select columns
-      colnames(table)[5] <- "Market value"
-      colnames(table)[6] <- "Portfolio allocation"
-      colnames(table)[7] <- "Buy/sell"
+      colnames(table)[c(5:6, 8)] <- c("Market value", "Portfolio allocation", "Profit/loss")
       
       # Add formatting to select columns
       table[4:5] <- apply(table[4:5], 1:2, function(x) paste0("$", custom_round(x), " CAD"))
-      table[6] <- sapply(table[6], function(x) paste0(x, "%"))
       
       # Add rows for cash and for the summary
-      table <- rbind(table, c("Cash", rep("-", 3), paste0("$", input$cash, " CAD"), rep("-", 2)))
-      table <- rbind(table, c("Summary", rep("-", 3), paste0("$", custom_round(total), " CAD"), total_prop, "-"))
+      table <- rbind(table, c("Cash", rep("-", 3), paste0("$", custom_round(input$cash), " CAD"), rep("-", 3)))
+      table <- rbind(table, c("Total", rep("-", 3), paste0("$", custom_round(total_equity), " CAD"), total_prop, "-", total_pl))
       
       # Output the results as an HTML table
-      kable(table, align = c("l", "l", "r", "r", "r", "r", "r"), row.names = FALSE) %>%
+      kable(table, align = c("l", "l", "r", "r", "r", "r", "r", "r"), row.names = FALSE, escape = FALSE) %>%
         kable_styling(bootstrap_options = c("striped", "hover")) %>% 
-          row_spec((nrow(table) - 1):nrow(table), bold = T, color = "white", background = "#808080")
-    })
+          row_spec((nrow(table) - 1):nrow(table), bold = T, color = "#808080", background = "#e7e7e7")
+    }
     
     # The input field for the REET quantity
     output$reet <- renderUI({
@@ -121,7 +140,7 @@ server <- function(input, output) {
     })
     
     # The function that scrapes financial data for the Questrade ETF portfolio
-    scrape_data <- function() {
+    scrape_data <- eventReactive(input$rebalance, {
       # Scrape data for the USD to CAD conversion rate
       cached$usd_to_cad <- scrape_yahoo("CAD", "https://ca.finance.yahoo.com/quote/usdcad=x", 1)
       cached$conversion <- as.numeric(gsub("[$]", "", cached$usd_to_cad$Price))
@@ -135,6 +154,19 @@ server <- function(input, output) {
       
       # Return the results as a data frame
       return(rbind(dgrc_to, reet, spem, sptm, xfh_to))
+    })
+    
+    # Add styling (coloring) to proportion based on whether the value is positive or negative 
+    red_or_green <- function(x) {
+      if(is.nan(x)) {
+        return("-")
+      } else if(x < 0) {
+        return(paste0("<span style='color: red;'>", custom_round(x), "%</span>"))
+      }  else if(x > 0) {
+        return(paste0("<span style='color: green;'>", custom_round(x), "%</span>"))
+      } else {
+        return(paste0(custom_round(x), "%"))
+      }
     }
     
     # The function that scrapes prices and dates data from Yahoo
