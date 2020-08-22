@@ -13,19 +13,19 @@ ui <- navbarPage(
     sidebarPanel(
       div(tags$strong("DGRC.TO")),
       column(6, numericInput("dgrc_to_quantity", "Quantity", min = 0, step = 1, value = 0)), 
-      column(6, numericInput("dgrc_to_price", "Price (CAD)", min = 0, step = 0.01, value = 0)), br(),
+      column(6, numericInput("dgrc_to_price", "Price (CAD)", min = 0, step = 0.01, value = "")), br(),
       div(tags$strong("REET")),
       column(6, numericInput("reet_quantity", "Quantity", min = 0, step = 1, value = 0)), 
-      column(6, numericInput("reet_price", "Price (USD)", min = 0, step = 0.01, value = 0)), br(),
+      column(6, numericInput("reet_price", "Price (USD)", min = 0, step = 0.01, value = "")), br(),
       div(tags$strong("SPEM")),
       column(6, numericInput("spem_quantity", "Quantity", min = 0, step = 1, value = 0)), 
-      column(6, numericInput("spem_price", "Price (USD)", min = 0, step = 0.01, value = 0)), br(),
+      column(6, numericInput("spem_price", "Price (USD)", min = 0, step = 0.01, value = "")), br(),
       div(tags$strong("SPTM")),
       column(6, numericInput("sptm_quantity", "Quantity", min = 0, step = 1, value = 0)), 
-      column(6, numericInput("sptm_price", "Price (USD)", min = 0, step = 0.01, value = 0)), br(),
+      column(6, numericInput("sptm_price", "Price (USD)", min = 0, step = 0.01, value = "")), br(),
       div(tags$strong("XFH.TO")),
       column(6, numericInput("xfh_to_quantity", "Quantity", min = 0, step = 1, value = 0)), 
-      column(6, numericInput("xfh_to_price", "Price (CAD)", min = 0, step = 0.01, value = 0)), br(),
+      column(6, numericInput("xfh_to_price", "Price (CAD)", min = 0, step = 0.01, value = "")), br(),
       uiOutput("cash"),
       uiOutput("cash_note"), br(),
       actionButton("rebalance", "Scrape Yahoo", icon("yahoo")),
@@ -70,16 +70,6 @@ server <- function(input, output, session) {
     output$cash_note <- renderUI({
       div("Note: 3% is removed from the cash before the rebalance computation is performed to account for USD to CAD conversion fees.", style = "background-color: #808080; color: #ffffff; border: 1px solid #808080; border-radius: 3px; width: 100%; padding: 10px;")
     })
-    
-    adjust_price_and_date <- function(df, manual_price = 0, convert = FALSE) {
-      if(manual_price > 0) {
-        df$price <- ifelse(isTRUE(convert), manual_price * cahced$conversion, manual_price)
-        df$date_time <- "Manual entry"
-        return(df)
-      } else {
-        return(df)
-      }
-    }
     
     # Main function
     output$rebalancer <- function() {
@@ -175,7 +165,7 @@ server <- function(input, output, session) {
     
     # The function that scrapes prices and dates data from Yahoo
     scrape_yahoo <- function(symbol, url, quantity, manual_price, convert = FALSE) {
-      if(manual_price > 0) {
+      if(! is.na(manual_price) & ! is.null(manual_price) & manual_price != "" & manual_price > 0) {
         price <- manual_price
         if(isTRUE(convert)) price <- price * cached$conversion
         date_time <- "Manual entry"
