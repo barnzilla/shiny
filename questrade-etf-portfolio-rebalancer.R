@@ -11,20 +11,30 @@ ui <- navbarPage(
   title = div("Questrade ETF portfolio", style = "margin-right: 48px;"),
   tabPanel("Home",
     sidebarPanel(
-      uiOutput("dgrc_to"),
-      uiOutput("reet"),
-      uiOutput("spem"),
-      uiOutput("sptm"),
-      uiOutput("xfh_to"),
+      div(tags$strong("DGRC.TO")),
+      column(6, numericInput("dgrc_to_quantity", "Quantity", min = 0, step = 1, value = 0)), 
+      column(6, numericInput("dgrc_to_price", "Price (CAD)", min = 0, step = 0.01, value = 0)), br(),
+      div(tags$strong("REET")),
+      column(6, numericInput("reet_quantity", "Quantity", min = 0, step = 1, value = 0)), 
+      column(6, numericInput("reet_price", "Price (USD)", min = 0, step = 0.01, value = 0)), br(),
+      div(tags$strong("SPEM")),
+      column(6, numericInput("spem_quantity", "Quantity", min = 0, step = 1, value = 0)), 
+      column(6, numericInput("spem_price", "Price (USD)", min = 0, step = 0.01, value = 0)), br(),
+      div(tags$strong("SPTM")),
+      column(6, numericInput("sptm_quantity", "Quantity", min = 0, step = 1, value = 0)), 
+      column(6, numericInput("sptm_price", "Price (USD)", min = 0, step = 0.01, value = 0)), br(),
+      div(tags$strong("XFH.TO")),
+      column(6, numericInput("xfh_to_quantity", "Quantity", min = 0, step = 1, value = 0)), 
+      column(6, numericInput("xfh_to_price", "Price (CAD)", min = 0, step = 0.01, value = 0)), br(),
       uiOutput("cash"),
       uiOutput("cash_note"), br(),
       actionButton("rebalance", "Scrape Yahoo", icon("yahoo")),
-      width = 3
+      width = 4
     ),
     mainPanel(
       div(tags$strong("Disclaimer: "), "this Shiny app is intended for educational use only; it should NOT be construed as offering financial advice of any kind.", style = "background-color: #808080; color: #ffffff; border: 1px solid #808080; border-radius: 3px; width: 100%; padding: 10px;"), br(), br(),
       tableOutput("rebalancer") %>% withSpinner(color = "#808080"), br(), br(),
-      width = 9
+      width = 8
     )
   ),
   tags$head(tags$style(HTML('
@@ -61,18 +71,32 @@ server <- function(input, output, session) {
       div("Note: 3% is removed from the cash before the rebalance computation is performed to account for USD to CAD conversion fees.", style = "background-color: #808080; color: #ffffff; border: 1px solid #808080; border-radius: 3px; width: 100%; padding: 10px;")
     })
     
-    # The input field for the DGRC.TO quantity
-    output$dgrc_to <- renderUI({
-        numericInput("dgrc_to", "DGRC.TO quantity", min = 0, step = 1, value = 0)
-    })
+    adjust_price_and_date <- function(df, manual_price = 0, convert = FALSE) {
+      if(manual_price > 0) {
+        df$price <- ifelse(isTRUE(convert), manual_price * cahced$conversion, manual_price)
+        df$date_time <- "Manual entry"
+        return(df)
+      } else {
+        return(df)
+      }
+    }
     
     # Main function
     output$rebalancer <- function() {
       # Scrape prices and dates from Yahoo
       table <- scrape_data()
       
-      # Update quantities and market values if quantities change
-      table$Quantity <- c(input$dgrc_to, input$reet, input$spem, input$sptm, input$xfh_to)
+      # Update quantities, prices and market values if quantities and/or prices change
+      table$Quantity <- c(input$dgrc_to_quantity, input$reet_quantity, input$spem_quantity, input$sptm_quantity, input$xfh_to_quantity)
+      manual_price_inputs <- c(input$dgrc_to_price, input$reet_price, input$spem_price, input$sptm_price, input$xfh_to_price)
+      for(i in 1:length(manual_price_inputs)) {
+        if(is.na(manual_price_inputs[i]) | is.null(manual_price_inputs[i]) | manual_price_inputs[i] < 0.01) {
+          # Do nothing
+        } else {
+          table$Price[i] <- ifelse(i %in% 2:4, manual_price_inputs[i] * cached$conversion, manual_price_inputs[i])
+          table$Date[i] <- "Manual entry"
+        }
+      }
       table$market_value <- table$Quantity * table$Price
       
       # Compute the portfolio allocations
@@ -119,38 +143,18 @@ server <- function(input, output, session) {
           row_spec((nrow(table) - 1):nrow(table), bold = T, color = "#808080", background = "#e7e7e7")
     }
     
-    # The input field for the REET quantity
-    output$reet <- renderUI({
-        numericInput("reet", "REET quantity", min = 0, step = 1, value = 0)
-    })
-    
-    # The input field for the SPEM quantity
-    output$spem <- renderUI({
-      numericInput("spem", "SPEM quantity", min = 0, step = 1, value = 0)
-    })
-    
-    # The input field for the SPTM quantity
-    output$sptm <- renderUI({
-      numericInput("sptm", "SPTM quantity", min = 0, step = 1, value = 0)
-    })
-    
-    # The input field for the XFH.TO quantity
-    output$xfh_to <- renderUI({
-      numericInput("xfh_to", "XFH.TO quantity", min = 0, step = 1, value = 0)
-    })
-    
     # The function that scrapes financial data for the Questrade ETF portfolio
     scrape_data <- eventReactive(input$rebalance, {
       # Scrape data for the USD to CAD conversion rate
-      cached$usd_to_cad <- scrape_yahoo("CAD", "https://ca.finance.yahoo.com/quote/usdcad=x", 1)
+      cached$usd_to_cad <- scrape_yahoo("CAD", "https://ca.finance.yahoo.com/quote/usdcad=x", 1, 0)
       cached$conversion <- as.numeric(gsub("[$]", "", cached$usd_to_cad$Price))
       
       # Scrape data for the ETFs in the Questrade ETF portfolio
-      dgrc_to <- scrape_yahoo("DGRC.TO", "https://ca.finance.yahoo.com/quote/dgrc.to", input$dgrc_to)
-      reet <- scrape_yahoo("REET", "https://ca.finance.yahoo.com/quote/reet", input$reet, convert = TRUE)
-      spem <- scrape_yahoo("SPEM", "https://ca.finance.yahoo.com/quote/spem", input$spem, convert = TRUE)
-      sptm <- scrape_yahoo("SPTM", "https://ca.finance.yahoo.com/quote/sptm", input$sptm, convert = TRUE)
-      xfh_to <- scrape_yahoo("XFH.TO", "https://ca.finance.yahoo.com/quote/xfh.to", input$xfh_to)
+      dgrc_to <- scrape_yahoo("DGRC.TO", "https://ca.finance.yahoo.com/quote/dgrc.to", input$dgrc_to_quantity, input$dgrc_to_price)
+      reet <- scrape_yahoo("REET", "https://ca.finance.yahoo.com/quote/reet", input$reet_quantity, input$reet_price, convert = TRUE)
+      spem <- scrape_yahoo("SPEM", "https://ca.finance.yahoo.com/quote/spem", input$spem_quantity, input$spem_price, convert = TRUE)
+      sptm <- scrape_yahoo("SPTM", "https://ca.finance.yahoo.com/quote/sptm", input$sptm_quantity, input$sptm_price, convert = TRUE)
+      xfh_to <- scrape_yahoo("XFH.TO", "https://ca.finance.yahoo.com/quote/xfh.to", input$xfh_to_quantity, input$xfh_to_price)
       
       # Return the results as a data frame
       return(rbind(dgrc_to, reet, spem, sptm, xfh_to))
@@ -170,26 +174,34 @@ server <- function(input, output, session) {
     }
     
     # The function that scrapes prices and dates data from Yahoo
-    scrape_yahoo <- function(symbol, url, quantity, convert = FALSE) {
-      url <- suppressWarnings(tryCatch(
-        url(url, "rb"),
-        error = function(e) { NA }
-      ))
-      if(is.na(url)) {
-        return(data.frame(rep(NA, 5)))
-      } else {
-        webpage <- tryCatch(
-          read_html(url),
-          error = function(e) { "URL does not exist" }
-        )
-        close(url)
-        scraped_data <- html_text(html_nodes(webpage, "[id='quote-header-info']") %>% html_nodes("div"))[16]
-        price <- strsplit(scraped_data, "[.]")
-        price <- as.numeric(paste0(price[[1]][1], ".", substr(price[[1]][2], 1, 2)))
+    scrape_yahoo <- function(symbol, url, quantity, manual_price, convert = FALSE) {
+      if(manual_price > 0) {
+        price <- manual_price
         if(isTRUE(convert)) price <- price * cached$conversion
-        date_time <- paste0(strsplit(scraped_data, " ")[[1]][5:6], collapse = " ")
+        date_time <- "Manual entry"
         market_value <- price * as.integer(quantity)
         return(data.frame(Symbol = symbol, Date = date_time, Quantity = quantity, Price = price, market_value = market_value, stringsAsFactors = FALSE))
+      } else {
+        url <- suppressWarnings(tryCatch(
+          url(url, "rb"),
+          error = function(e) { NA }
+        ))
+        if(is.na(url)) {
+          return(data.frame(rep(NA, 5)))
+        } else {
+          webpage <- tryCatch(
+            read_html(url),
+            error = function(e) { "URL does not exist" }
+          )
+          close(url)
+          scraped_data <- html_text(html_nodes(webpage, "[id='quote-header-info']") %>% html_nodes("div"))[16]
+          price <- strsplit(scraped_data, "[.]")
+          price <- as.numeric(paste0(price[[1]][1], ".", substr(price[[1]][2], 1, 2)))
+          if(isTRUE(convert)) price <- price * cached$conversion
+          date_time <- paste0(strsplit(scraped_data, " ")[[1]][5:6], collapse = " ")
+          market_value <- price * as.integer(quantity)
+          return(data.frame(Symbol = symbol, Date = date_time, Quantity = quantity, Price = price, market_value = market_value, stringsAsFactors = FALSE))
+        }
       }
     }
 }
