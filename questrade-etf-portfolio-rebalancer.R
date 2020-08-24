@@ -10,32 +10,32 @@ ui <- navbarPage(
   windowTitle = HTML("Questrade ETF portfolio rebalancer"),
   title = div("Questrade ETF portfolio", style = "margin-right: 48px;"),
   tabPanel("Home",
-    sidebarPanel(
-      div(tags$strong("DGRC.TO")),
-      column(6, numericInput("dgrc_to_quantity", "Quantity", min = 0, step = 1, value = 0)), 
-      column(6, numericInput("dgrc_to_price", "Price (CAD)", min = 0, step = 0.01, value = "")), br(),
-      div(tags$strong("REET")),
-      column(6, numericInput("reet_quantity", "Quantity", min = 0, step = 1, value = 0)), 
-      column(6, numericInput("reet_price", "Price (USD)", min = 0, step = 0.01, value = "")), br(),
-      div(tags$strong("SPEM")),
-      column(6, numericInput("spem_quantity", "Quantity", min = 0, step = 1, value = 0)), 
-      column(6, numericInput("spem_price", "Price (USD)", min = 0, step = 0.01, value = "")), br(),
-      div(tags$strong("SPTM")),
-      column(6, numericInput("sptm_quantity", "Quantity", min = 0, step = 1, value = 0)), 
-      column(6, numericInput("sptm_price", "Price (USD)", min = 0, step = 0.01, value = "")), br(),
-      div(tags$strong("XFH.TO")),
-      column(6, numericInput("xfh_to_quantity", "Quantity", min = 0, step = 1, value = 0)), 
-      column(6, numericInput("xfh_to_price", "Price (CAD)", min = 0, step = 0.01, value = "")), br(),
-      uiOutput("cash"),
-      uiOutput("cash_note"), br(),
-      actionButton("rebalance", "Scrape Yahoo", icon("yahoo")),
-      width = 4
-    ),
-    mainPanel(
-      div(tags$strong("Disclaimer: "), "this Shiny app is intended for educational use only; it should NOT be construed as offering financial advice of any kind.", style = "background-color: #808080; color: #ffffff; border: 1px solid #808080; border-radius: 3px; width: 100%; padding: 10px;"), br(), br(),
-      tableOutput("rebalancer") %>% withSpinner(color = "#808080"), br(), br(),
-      width = 8
-    )
+           sidebarPanel(
+             div(tags$strong("DGRC.TO")),
+             column(6, numericInput("dgrc_to_quantity", "Quantity", min = 0, step = 1, value = "")), 
+             column(6, numericInput("dgrc_to_price", "Price (CAD)", min = 0, step = 0.01, value = "")), br(),
+             div(tags$strong("REET")),
+             column(6, numericInput("reet_quantity", "Quantity", min = 0, step = 1, value = "")), 
+             column(6, numericInput("reet_price", "Price (USD)", min = 0, step = 0.01, value = "")), br(),
+             div(tags$strong("SPEM")),
+             column(6, numericInput("spem_quantity", "Quantity", min = 0, step = 1, value = "")), 
+             column(6, numericInput("spem_price", "Price (USD)", min = 0, step = 0.01, value = "")), br(),
+             div(tags$strong("SPTM")),
+             column(6, numericInput("sptm_quantity", "Quantity", min = 0, step = 1, value = "")), 
+             column(6, numericInput("sptm_price", "Price (USD)", min = 0, step = 0.01, value = "")), br(),
+             div(tags$strong("XFH.TO")),
+             column(6, numericInput("xfh_to_quantity", "Quantity", min = 0, step = 1, value = "")), 
+             column(6, numericInput("xfh_to_price", "Price (CAD)", min = 0, step = 0.01, value = "")), br(),
+             numericInput("cash", "Cash (CAD)", min = 0, step = 1, value = ""),
+             div("Note: 3% is removed from the cash before the rebalance computation is performed to account for USD to CAD conversion fees.", style = "background-color: #808080; color: #ffffff; border: 1px solid #808080; border-radius: 3px; width: 100%; padding: 10px;"), br(),
+             actionButton("rebalance", "Scrape Yahoo", icon("yahoo")),
+             width = 4
+           ),
+           mainPanel(
+             div(tags$strong("Disclaimer: "), "this Shiny app is intended for educational use only; it should NOT be construed as offering financial advice of any kind.", style = "background-color: #808080; color: #ffffff; border: 1px solid #808080; border-radius: 3px; width: 100%; padding: 10px;"), br(), br(),
+             tableOutput("rebalancer") %>% withSpinner(color = "#808080"), br(), br(),
+             width = 8
+           )
   ),
   tags$head(tags$style(HTML('
   // Custom CSS here
@@ -44,156 +44,151 @@ ui <- navbarPage(
 
 # Define server logic for the shiny app
 server <- function(input, output, session) {
-    # Cache select data structures
-    cached <- reactiveValues()
+  # Cache select data structures
+  cached <- reactiveValues()
+  
+  # Round numeric values and output as formatted values
+  custom_round <- function(x, n = 2) {
+    return(format(round(as.numeric(x), n), nsmall = n, big.mark = ","))
+  }
+  
+  # Get yesterday's portfolio prices
+  get_historical_data <- function(ticker) {
+    period1 <- as.numeric(as.POSIXlt(Sys.Date() - 5))
+    period2 <- as.numeric(as.POSIXlt(Sys.Date()))
+    url <- paste0("https://query1.finance.yahoo.com/v7/finance/download/", ticker, "?period1=", period1, "&period2=", period2, "&interval=1d&events=history")
+    data <- suppressWarnings(read.csv(url))
+    return(data$Close[nrow(data)])
+  }
+  
+  # Main function
+  output$rebalancer <- function() {
+    # Scrape prices and dates from Yahoo
+    table <- scrape_data()
     
-    # Round numeric values and output as formatted values
-    custom_round <- function(x, n = 2) {
-      return(format(round(as.numeric(x), n), nsmall = n, big.mark = ","))
-    }
-    
-    # Get yesterday's portfolio prices
-    get_historical_data <- function(ticker) {
-      period1 <- as.numeric(as.POSIXlt(Sys.Date() - 5))
-      period2 <- as.numeric(as.POSIXlt(Sys.Date()))
-      url <- paste0("https://query1.finance.yahoo.com/v7/finance/download/", ticker, "?period1=", period1, "&period2=", period2, "&interval=1d&events=history")
-      data <- suppressWarnings(read.csv(url))
-      return(data$Close[nrow(data)])
-    }
-    
-    # The input field for the cash quantity
-    output$cash <- renderUI({
-      numericInput("cash", "Cash (CAD)", min = 0, step = 1, value = 0)
-    })
-    
-    # The note that accompanies the cash input field
-    output$cash_note <- renderUI({
-      div("Note: 3% is removed from the cash before the rebalance computation is performed to account for USD to CAD conversion fees.", style = "background-color: #808080; color: #ffffff; border: 1px solid #808080; border-radius: 3px; width: 100%; padding: 10px;")
-    })
-    
-    # Main function
-    output$rebalancer <- function() {
-      # Scrape prices and dates from Yahoo
-      table <- scrape_data()
-      
-      # Update quantities, prices and market values if quantities and/or prices change
-      table$Quantity <- c(input$dgrc_to_quantity, input$reet_quantity, input$spem_quantity, input$sptm_quantity, input$xfh_to_quantity)
-      manual_price_inputs <- c(input$dgrc_to_price, input$reet_price, input$spem_price, input$sptm_price, input$xfh_to_price)
-      for(i in 1:length(manual_price_inputs)) {
-        if(is.na(manual_price_inputs[i]) | is.null(manual_price_inputs[i]) | manual_price_inputs[i] < 0.01) {
-          # Do nothing
-        } else {
-          table$Price[i] <- ifelse(i %in% 2:4, manual_price_inputs[i] * cached$conversion, manual_price_inputs[i])
-          table$Date[i] <- "Manual entry"
-        }
-      }
-      table$market_value <- table$Quantity * table$Price
-      
-      # Compute the portfolio allocations
-      if(sum(table$market_value) == 0) {
-        table$prop <- rep(paste0(custom_round(0), "%"), length(table$market_value))
-        total_prop <- paste0(custom_round(0), "%")
+    # Update quantities, prices and market values if quantities and/or prices change
+    table$Quantity <- sapply(c(input$dgrc_to_quantity, input$reet_quantity, input$spem_quantity, input$sptm_quantity, input$xfh_to_quantity), function(x) if(is.na(x) | ! is.numeric(x)) 0 else x)
+    manual_price_inputs <- c(input$dgrc_to_price, input$reet_price, input$spem_price, input$sptm_price, input$xfh_to_price)
+    for(i in 1:length(manual_price_inputs)) {
+      if(is.na(manual_price_inputs[i]) | ! is.numeric(manual_price_inputs[i]) | manual_price_inputs[i] < 0.01) {
+        # Do nothing
       } else {
-        table$prop <- paste0(custom_round(unname(prop.table(table$market_value)) * 100), "%")
-        total_prop <- paste0(custom_round(sum(unname(prop.table(table$market_value)) * 100)), "%")
+        table$Price[i] <- ifelse(i %in% 2:4, manual_price_inputs[i] * cached$conversion, manual_price_inputs[i])
+        table$Date[i] <- "Manual entry"
       }
-      
-      # Define the optimal portfolio allocations (aggressive); see https://www.questrade.com/questwealth-portfolios/etf-portfolios
-      optimal_allocation <- c(30.6, 4.9, 4.9, 29.4, 28.2) * 100 / sum(c(30.6, 4.9, 4.9, 29.4, 28.2)) * 0.01
-      
-      # Compute total equity (remove 3% from cash to account for CAD to USD conversion fees)
-      total_equity <- sum(table$market_value) + (input$cash * 0.97)
-      
-      # Compute the rebalance column
-      table$Rebalance <- floor(((optimal_allocation * total_equity) - table$market_value) / table$Price)
-      table$Rebalance <- sapply(table$Rebalance, function(x) if(x > 0) paste0("+", x) else as.character(x))
-      
-      # Compute profit/loss
-      historical_prices <- unname(sapply(c("DGRC.TO", "REET", "SPEM", "SPTM", "XFH.TO", "USDCAD%3DX"), function(x) get_historical_data(x)))
-      historical_prices[2:4] <- historical_prices[2:4] * historical_prices[6]
-      historical_prices <- historical_prices[1:5]
-      historical_market_value <- historical_prices * table$Quantity
-      table$pl <- (table$market_value - historical_market_value) / historical_market_value * 100
-      total_pl <- ifelse(sum(table$market_value) == 0, "-", red_or_green((sum(table$market_value, na.rm = TRUE) - sum(historical_market_value, na.rm = TRUE)) / sum(historical_market_value, na.rm = TRUE) * 100))
-      table$pl <- sapply(table$pl, function(x) red_or_green(x))
-      
-      # Add more semantic column names for select columns
-      colnames(table)[c(5:6, 8)] <- c("Market value", "Portfolio allocation", "Profit/loss")
-      
-      # Add formatting to select columns
-      table[4:5] <- apply(table[4:5], 1:2, function(x) paste0("$", custom_round(x), " CAD"))
-      
-      # Add rows for cash and for the summary
-      table <- rbind(table, c("Cash", rep("-", 3), paste0("$", custom_round(input$cash), " CAD"), rep("-", 3)))
-      table <- rbind(table, c("Total", rep("-", 3), paste0("$", custom_round(total_equity), " CAD"), total_prop, "-", total_pl))
-      
-      # Output the results as an HTML table
-      kable(table, align = c("l", "l", "r", "r", "r", "r", "r", "r"), row.names = FALSE, escape = FALSE) %>%
-        kable_styling(bootstrap_options = c("striped", "hover")) %>% 
-          row_spec((nrow(table) - 1):nrow(table), bold = T, color = "#808080", background = "#e7e7e7")
+    }
+    table$market_value <- table$Quantity * table$Price
+    
+    # Compute the portfolio allocations
+    if(sum(table$market_value) == 0) {
+      table$prop <- rep(paste0(custom_round(0), "%"), length(table$market_value))
+      total_prop <- paste0(custom_round(0), "%")
+    } else {
+      table$prop <- paste0(custom_round(unname(prop.table(table$market_value)) * 100), "%")
+      total_prop <- paste0(custom_round(sum(unname(prop.table(table$market_value)) * 100)), "%")
     }
     
-    # The function that scrapes financial data for the Questrade ETF portfolio
-    scrape_data <- eventReactive(input$rebalance, {
-      # Scrape data for the USD to CAD conversion rate
-      cached$usd_to_cad <- scrape_yahoo("CAD", "https://ca.finance.yahoo.com/quote/usdcad=x", 1, 0)
-      cached$conversion <- as.numeric(gsub("[$]", "", cached$usd_to_cad$Price))
-      
-      # Scrape data for the ETFs in the Questrade ETF portfolio
-      dgrc_to <- scrape_yahoo("DGRC.TO", "https://ca.finance.yahoo.com/quote/dgrc.to", input$dgrc_to_quantity, input$dgrc_to_price)
-      reet <- scrape_yahoo("REET", "https://ca.finance.yahoo.com/quote/reet", input$reet_quantity, input$reet_price, convert = TRUE)
-      spem <- scrape_yahoo("SPEM", "https://ca.finance.yahoo.com/quote/spem", input$spem_quantity, input$spem_price, convert = TRUE)
-      sptm <- scrape_yahoo("SPTM", "https://ca.finance.yahoo.com/quote/sptm", input$sptm_quantity, input$sptm_price, convert = TRUE)
-      xfh_to <- scrape_yahoo("XFH.TO", "https://ca.finance.yahoo.com/quote/xfh.to", input$xfh_to_quantity, input$xfh_to_price)
-      
-      # Return the results as a data frame
-      return(rbind(dgrc_to, reet, spem, sptm, xfh_to))
-    })
+    # Define the optimal portfolio allocations (aggressive); see https://www.questrade.com/questwealth-portfolios/etf-portfolios
+    optimal_allocation <- c(30.6, 4.9, 4.9, 29.4, 28.2) * 100 / sum(c(30.6, 4.9, 4.9, 29.4, 28.2)) * 0.01
     
-    # Add styling (coloring) to proportion based on whether the value is positive or negative 
-    red_or_green <- function(x) {
-      if(is.nan(x)) {
-        return("-")
-      } else if(x < 0) {
-        return(paste0("<span style='color: red;'>", custom_round(x), "%</span>"))
-      }  else if(x > 0) {
-        return(paste0("<span style='color: green;'>+", custom_round(x), "%</span>"))
+    # Compute total equity (remove 3% from cash to account for CAD to USD conversion fees)
+    cash <- ifelse(is.na(input$cash) | ! is.numeric(input$cash), 0, input$cash)
+    total_equity <- sum(table$market_value) + (cash * 0.97)
+    
+    # Compute the rebalance column
+    table$Rebalance <- floor(((optimal_allocation * total_equity) - table$market_value) / table$Price)
+    table$Rebalance <- sapply(table$Rebalance, function(x) if(x > 0) paste0("+", x) else as.character(x))
+    
+    # Recompute total equity without the 3% reduction in cash
+    total_equity <- sum(table$market_value) + cash
+    
+    # Compute profit/loss
+    historical_prices <- unname(sapply(c("DGRC.TO", "REET", "SPEM", "SPTM", "XFH.TO", "USDCAD%3DX"), function(x) get_historical_data(x)))
+    historical_prices[2:4] <- historical_prices[2:4] * historical_prices[6]
+    historical_prices <- historical_prices[1:5]
+    historical_market_value <- historical_prices * table$Quantity
+    table$pl <- (table$market_value - historical_market_value) / historical_market_value * 100
+    total_pl <- ifelse(sum(table$market_value) == 0, "-", red_or_green((sum(table$market_value, na.rm = TRUE) - sum(historical_market_value, na.rm = TRUE)) / sum(historical_market_value, na.rm = TRUE) * 100))
+    table$pl <- sapply(table$pl, function(x) red_or_green(x))
+    
+    # Add more semantic column names for select columns
+    colnames(table)[c(5:6, 8)] <- c("Market value", "Portfolio allocation", "Profit/loss")
+    
+    # Add formatting to select columns
+    table[4:5] <- apply(table[4:5], 1:2, function(x) paste0("$", custom_round(x), " CAD"))
+    
+    # Add rows for cash and for the summary
+    table <- rbind(table, c("Cash", rep("-", 3), paste0("$", custom_round(cash), " CAD"), rep("-", 3)))
+    table <- rbind(table, c("Total", rep("-", 3), paste0("$", custom_round(total_equity), " CAD"), total_prop, "-", total_pl))
+    
+    # Output the results as an HTML table
+    kable(table, align = c("l", "l", "r", "r", "r", "r", "r", "r"), row.names = FALSE, escape = FALSE) %>%
+      kable_styling(bootstrap_options = c("striped", "hover")) %>% 
+      row_spec((nrow(table) - 1):nrow(table), bold = T, color = "#808080", background = "#e7e7e7")
+  }
+  
+  # The function that scrapes financial data for the Questrade ETF portfolio
+  scrape_data <- eventReactive(input$rebalance, {
+    # Scrape data for the USD to CAD conversion rate
+    cached$usd_to_cad <- scrape_yahoo("CAD", "https://ca.finance.yahoo.com/quote/usdcad=x", 1, 0)
+    cached$conversion <- as.numeric(gsub("[$]", "", cached$usd_to_cad$Price))
+    
+    # Scrape data for the ETFs in the Questrade ETF portfolio
+    dgrc_to <- scrape_yahoo("DGRC.TO", "https://ca.finance.yahoo.com/quote/dgrc.to", input$dgrc_to_quantity, input$dgrc_to_price)
+    reet <- scrape_yahoo("REET", "https://ca.finance.yahoo.com/quote/reet", input$reet_quantity, input$reet_price, convert = TRUE)
+    spem <- scrape_yahoo("SPEM", "https://ca.finance.yahoo.com/quote/spem", input$spem_quantity, input$spem_price, convert = TRUE)
+    sptm <- scrape_yahoo("SPTM", "https://ca.finance.yahoo.com/quote/sptm", input$sptm_quantity, input$sptm_price, convert = TRUE)
+    xfh_to <- scrape_yahoo("XFH.TO", "https://ca.finance.yahoo.com/quote/xfh.to", input$xfh_to_quantity, input$xfh_to_price)
+    
+    # Return the results as a data frame
+    return(rbind(dgrc_to, reet, spem, sptm, xfh_to))
+  })
+  
+  # Add styling (coloring) to proportion based on whether the value is positive or negative 
+  red_or_green <- function(x) {
+    if(is.nan(x)) {
+      return("-")
+    } else if(x < 0) {
+      return(paste0("<span style='color: red;'>", custom_round(x), "%</span>"))
+    }  else if(x > 0) {
+      return(paste0("<span style='color: green;'>+", custom_round(x), "%</span>"))
+    } else {
+      return(paste0(custom_round(x), "%"))
+    }
+  }
+  
+  # The function that scrapes prices and dates data from Yahoo
+  scrape_yahoo <- function(symbol, url, quantity, manual_price, convert = FALSE) {
+    if(is.na(quantity) | ! is.numeric(quantity)) quantity <- 0
+    if(! is.na(manual_price) & is.numeric(manual_price) & manual_price > 0) {
+      price <- manual_price
+      if(isTRUE(convert)) price <- price * cached$conversion
+      date_time <- "Manual entry"
+      market_value <- price * as.integer(quantity)
+      return(data.frame(Symbol = symbol, Date = date_time, Quantity = quantity, Price = price, market_value = market_value, stringsAsFactors = FALSE))
+    } else {
+      url <- suppressWarnings(tryCatch(
+        url(url, "rb"),
+        error = function(e) { NA }
+      ))
+      if(is.na(url)) {
+        return(data.frame(rep(NA, 5)))
       } else {
-        return(paste0(custom_round(x), "%"))
-      }
-    }
-    
-    # The function that scrapes prices and dates data from Yahoo
-    scrape_yahoo <- function(symbol, url, quantity, manual_price, convert = FALSE) {
-      if(! is.na(manual_price) & ! is.null(manual_price) & manual_price != "" & manual_price > 0) {
-        price <- manual_price
+        webpage <- tryCatch(
+          read_html(url),
+          error = function(e) { "URL does not exist" }
+        )
+        close(url)
+        scraped_data <- html_text(html_nodes(webpage, "[id='quote-header-info']") %>% html_nodes("div"))[16]
+        price <- strsplit(scraped_data, "[.]")
+        price <- as.numeric(paste0(price[[1]][1], ".", substr(price[[1]][2], 1, 2)))
         if(isTRUE(convert)) price <- price * cached$conversion
-        date_time <- "Manual entry"
+        date_time <- paste0(strsplit(scraped_data, " ")[[1]][5:6], collapse = " ")
         market_value <- price * as.integer(quantity)
         return(data.frame(Symbol = symbol, Date = date_time, Quantity = quantity, Price = price, market_value = market_value, stringsAsFactors = FALSE))
-      } else {
-        url <- suppressWarnings(tryCatch(
-          url(url, "rb"),
-          error = function(e) { NA }
-        ))
-        if(is.na(url)) {
-          return(data.frame(rep(NA, 5)))
-        } else {
-          webpage <- tryCatch(
-            read_html(url),
-            error = function(e) { "URL does not exist" }
-          )
-          close(url)
-          scraped_data <- html_text(html_nodes(webpage, "[id='quote-header-info']") %>% html_nodes("div"))[16]
-          price <- strsplit(scraped_data, "[.]")
-          price <- as.numeric(paste0(price[[1]][1], ".", substr(price[[1]][2], 1, 2)))
-          if(isTRUE(convert)) price <- price * cached$conversion
-          date_time <- paste0(strsplit(scraped_data, " ")[[1]][5:6], collapse = " ")
-          market_value <- price * as.integer(quantity)
-          return(data.frame(Symbol = symbol, Date = date_time, Quantity = quantity, Price = price, market_value = market_value, stringsAsFactors = FALSE))
-        }
       }
     }
+  }
 }
 
 # Run the shiny app 
