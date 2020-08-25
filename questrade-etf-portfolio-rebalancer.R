@@ -13,22 +13,32 @@ ui <- navbarPage(
            sidebarPanel(
              div(tags$strong("DGRC.TO")),
              column(6, numericInput("dgrc_to_quantity", "Quantity", min = 0, step = 1, value = "")), 
-             column(6, numericInput("dgrc_to_price", "Price (CAD)", min = 0, step = 0.01, value = "")), br(),
+             column(6, numericInput("dgrc_to_price", "Price", min = 0, step = 0.01, value = "")), br(),
              div(tags$strong("REET")),
              column(6, numericInput("reet_quantity", "Quantity", min = 0, step = 1, value = "")), 
-             column(6, numericInput("reet_price", "Price (USD)", min = 0, step = 0.01, value = "")), br(),
+             column(6, numericInput("reet_price", "Price", min = 0, step = 0.01, value = "")), br(),
              div(tags$strong("SPEM")),
              column(6, numericInput("spem_quantity", "Quantity", min = 0, step = 1, value = "")), 
-             column(6, numericInput("spem_price", "Price (USD)", min = 0, step = 0.01, value = "")), br(),
+             column(6, numericInput("spem_price", "Price", min = 0, step = 0.01, value = "")), br(),
              div(tags$strong("SPTM")),
              column(6, numericInput("sptm_quantity", "Quantity", min = 0, step = 1, value = "")), 
-             column(6, numericInput("sptm_price", "Price (USD)", min = 0, step = 0.01, value = "")), br(),
+             column(6, numericInput("sptm_price", "Price", min = 0, step = 0.01, value = "")), br(),
              div(tags$strong("XFH.TO")),
              column(6, numericInput("xfh_to_quantity", "Quantity", min = 0, step = 1, value = "")), 
-             column(6, numericInput("xfh_to_price", "Price (CAD)", min = 0, step = 0.01, value = "")), br(),
+             column(6, numericInput("xfh_to_price", "Price", min = 0, step = 0.01, value = "")), br(),
              numericInput("cash", "Cash (CAD)", min = 0, step = 1, value = ""),
              div("Note: 3% is removed from the cash before the rebalance computation is performed to account for USD to CAD conversion fees.", style = "background-color: #808080; color: #ffffff; border: 1px solid #808080; border-radius: 3px; width: 100%; padding: 10px;"), br(),
-             actionButton("rebalance", "Scrape Yahoo", icon("yahoo")),
+             div(tags$label("Positions held outside portfolio"), style = "margin-bottom: 18px;"),
+             column(12, textInput("custom_position1_symbol", "Symbol", value = "")),
+             column(6, numericInput("custom_position1_quantity", "Quantity", min = 0, step = 1, value = "")), 
+             column(6, numericInput("custom_position1_price", "Price", min = 0, step = 0.01, value = ""), style = "margin-bottom: 18px;"),
+             column(12, textInput("custom_position2_symbol", "Symbol", value = "")),
+             column(6, numericInput("custom_position2_quantity", "Quantity", min = 0, step = 1, value = "")), 
+             column(6, numericInput("custom_position2_price", "Price", min = 0, step = 0.01, value = ""), style = "margin-bottom: 18px;"),
+             column(12, textInput("custom_position3_symbol", "Symbol", value = "")),
+             column(6, numericInput("custom_position3_quantity", "Quantity", min = 0, step = 1, value = "")), 
+             column(6, numericInput("custom_position3_price", "Price", min = 0, step = 0.01, value = "")),
+             actionButton("rebalance", "Scrape Yahoo", icon("yahoo"), style = "margin-top: 18px;"),
              width = 4
            ),
            mainPanel(
@@ -67,55 +77,71 @@ server <- function(input, output, session) {
     table <- scrape_data()
     
     # Update quantities, prices and market values if quantities and/or prices change
-    table$Quantity <- sapply(c(input$dgrc_to_quantity, input$reet_quantity, input$spem_quantity, input$sptm_quantity, input$xfh_to_quantity), function(x) if(is.na(x) | ! is.numeric(x)) 0 else x)
+    quantities <- c(input$dgrc_to_quantity, input$reet_quantity, input$spem_quantity, input$sptm_quantity, input$xfh_to_quantity)
     manual_price_inputs <- c(input$dgrc_to_price, input$reet_price, input$spem_price, input$sptm_price, input$xfh_to_price)
+    custom_symbols <- c(input$custom_position1_symbol, input$custom_position2_symbol, input$custom_position3_symbol)
+    custom_quantities <- c(input$custom_position1_quantity, input$custom_position2_quantity, input$custom_position3_quantity)
+    custom_prices <- c(input$custom_position1_price, input$custom_position2_price, input$custom_position3_price)
+    for(i in 1:length(custom_symbols)) {
+      if(length(table$symbol[table$symbol == toupper(custom_symbols[i])]) == 1) {
+        quantities <- append(quantities, custom_quantities[i])
+        manual_price_inputs <- append(manual_price_inputs, custom_prices[i])
+      }
+    }
+    table$quantity <- sapply(quantities, function(x) if(is.na(x) | ! is.numeric(x)) 0 else x)
+    
     for(i in 1:length(manual_price_inputs)) {
       if(is.na(manual_price_inputs[i]) | ! is.numeric(manual_price_inputs[i]) | manual_price_inputs[i] < 0.01) {
         # Do nothing
       } else {
-        table$Price[i] <- ifelse(i %in% 2:4, manual_price_inputs[i] * cached$conversion, manual_price_inputs[i])
-        table$Date[i] <- "Manual entry"
+        table$price[i] <- ifelse(table$currency[i] == "USD", manual_price_inputs[i] * cached$usdcadx, manual_price_inputs[i])
+        table$date_time[i] <- "Manual entry"
       }
     }
-    table$market_value <- table$Quantity * table$Price
+    table$market_value <- table$quantity * table$price
     
     # Compute the portfolio allocations
-    if(sum(table$market_value) == 0) {
-      table$prop <- rep(paste0(custom_round(0), "%"), length(table$market_value))
+    table$prop <- rep("-", nrow(table))
+    if(sum(table$market_value[table$in_portfolio == "Yes"]) == 0) {
+      table$prop[table$in_portfolio == "Yes"] <- rep(paste0(custom_round(0), "%"), length(table$market_value[table$in_portfolio == "Yes"]))
       total_prop <- paste0(custom_round(0), "%")
     } else {
-      table$prop <- paste0(custom_round(unname(prop.table(table$market_value)) * 100), "%")
-      total_prop <- paste0(custom_round(sum(unname(prop.table(table$market_value)) * 100)), "%")
+      table$prop[table$in_portfolio == "Yes"] <- paste0(custom_round(unname(prop.table(table$market_value[table$in_portfolio == "Yes"])) * 100), "%")
+      total_prop <- paste0(custom_round(sum(unname(prop.table(table$market_value[table$in_portfolio == "Yes"])) * 100)), "%")
     }
     
     # Define the optimal portfolio allocations (aggressive); see https://www.questrade.com/questwealth-portfolios/etf-portfolios
     optimal_allocation <- c(30.6, 4.9, 4.9, 29.4, 28.2) * 100 / sum(c(30.6, 4.9, 4.9, 29.4, 28.2)) * 0.01
     
-    # Compute total equity (remove 3% from cash to account for CAD to USD conversion fees)
+    # Compute total equity for the portfolio positions (remove 3% from cash to account for CAD to USD conversion fees)
     cash <- ifelse(is.na(input$cash) | ! is.numeric(input$cash), 0, input$cash)
-    total_equity <- sum(table$market_value) + (cash * 0.97)
+    total_equity <- sum(table$market_value[table$in_portfolio == "Yes"]) + (cash * 0.97)
     
     # Compute the rebalance column
-    table$Rebalance <- floor(((optimal_allocation * total_equity) - table$market_value) / table$Price)
-    table$Rebalance <- sapply(table$Rebalance, function(x) if(x > 0) paste0("+", x) else as.character(x))
+    table$rebalance <- rep("-", nrow(table))
+    table$rebalance[table$in_portfolio == "Yes"] <- floor(((optimal_allocation * total_equity) - table$market_value[table$in_portfolio == "Yes"]) / table$price[table$in_portfolio == "Yes"])
+    table$rebalance[table$in_portfolio == "Yes"] <- sapply(table$rebalance[table$in_portfolio == "Yes"], function(x) if(x > 0) paste0("+", x) else as.character(x))
     
-    # Recompute total equity without the 3% reduction in cash
+    # Recompute total equity for all positions, and without the 3% reduction in cash
     total_equity <- sum(table$market_value) + cash
     
     # Compute profit/loss
-    historical_prices <- unname(sapply(c("DGRC.TO", "REET", "SPEM", "SPTM", "XFH.TO", "USDCAD%3DX"), function(x) get_historical_data(x)))
-    historical_prices[2:4] <- historical_prices[2:4] * historical_prices[6]
-    historical_prices <- historical_prices[1:5]
-    historical_market_value <- historical_prices * table$Quantity
-    table$pl <- (table$market_value - historical_market_value) / historical_market_value * 100
-    total_pl <- ifelse(sum(table$market_value) == 0, "-", red_or_green((sum(table$market_value, na.rm = TRUE) - sum(historical_market_value, na.rm = TRUE)) / sum(historical_market_value, na.rm = TRUE) * 100))
+    table$historical_prices <- unname(sapply(table$symbol, function(x) get_historical_data(x)))
+    historical_usdcadx <- get_historical_data("USDCAD%3DX")
+    table$historical_prices[table$currency == "USD"] <- table$historical_prices[table$currency == "USD"] * historical_usdcadx
+    table$historical_market_value <- table$historical_prices * table$quantity
+    table$pl <- (table$market_value - table$historical_market_value) / table$historical_market_value * 100
+    total_pl <- ifelse(sum(table$market_value) == 0, "-", red_or_green((sum(table$market_value, na.rm = TRUE) - sum(table$historical_market_value, na.rm = TRUE)) / sum(table$historical_market_value, na.rm = TRUE) * 100))
     table$pl <- sapply(table$pl, function(x) red_or_green(x))
     
-    # Add more semantic column names for select columns
-    colnames(table)[c(5:6, 8)] <- c("Market value", "Portfolio allocation", "Profit/loss")
+    # Remove unwanted columns
+    table <- table[-c(2:3,10:11)]
     
     # Add formatting to select columns
-    table[4:5] <- apply(table[4:5], 1:2, function(x) paste0("$", custom_round(x), " CAD"))
+    table[c("price", "market_value")] <- apply(table[c("price", "market_value")], 1:2, function(x) paste0("$", custom_round(x), " CAD"))
+    
+    # Add more semantic column names
+    colnames(table) <- c("Symbol", "Date/time", "Price", "Quantity", "Market value", "Portfolio allocation", "Rebalance", "Profit/loss")
     
     # Add rows for cash and for the summary
     table <- rbind(table, c("Cash", rep("-", 3), paste0("$", custom_round(cash), " CAD"), rep("-", 3)))
@@ -130,18 +156,27 @@ server <- function(input, output, session) {
   # The function that scrapes financial data for the Questrade ETF portfolio
   scrape_data <- eventReactive(input$rebalance, {
     # Scrape data for the USD to CAD conversion rate
-    cached$usd_to_cad <- scrape_yahoo("CAD", "https://ca.finance.yahoo.com/quote/usdcad=x", 1, 0)
-    cached$conversion <- as.numeric(gsub("[$]", "", cached$usd_to_cad$Price))
+    cached$usdcadx <- as.numeric(scrape_yahoo("USDCAD=X")$price)
     
-    # Scrape data for the ETFs in the Questrade ETF portfolio
-    dgrc_to <- scrape_yahoo("DGRC.TO", "https://ca.finance.yahoo.com/quote/dgrc.to", input$dgrc_to_quantity, input$dgrc_to_price)
-    reet <- scrape_yahoo("REET", "https://ca.finance.yahoo.com/quote/reet", input$reet_quantity, input$reet_price, convert = TRUE)
-    spem <- scrape_yahoo("SPEM", "https://ca.finance.yahoo.com/quote/spem", input$spem_quantity, input$spem_price, convert = TRUE)
-    sptm <- scrape_yahoo("SPTM", "https://ca.finance.yahoo.com/quote/sptm", input$sptm_quantity, input$sptm_price, convert = TRUE)
-    xfh_to <- scrape_yahoo("XFH.TO", "https://ca.finance.yahoo.com/quote/xfh.to", input$xfh_to_quantity, input$xfh_to_price)
+    # Scrape data 
+    output <- data.frame(row.names = NULL)
+    output <- rbind(output, data.frame(scrape_yahoo("DGRC.TO", input$dgrc_to_quantity, input$dgrc_to_price)))
+    output <- rbind(output, data.frame(scrape_yahoo("REET", input$reet_quantity, input$reet_price)))
+    output <- rbind(output, data.frame(scrape_yahoo("SPEM", input$spem_quantity, input$spem_price)))
+    output <- rbind(output, data.frame(scrape_yahoo("SPTM", input$sptm_quantity, input$sptm_price)))
+    output <- rbind(output, data.frame(scrape_yahoo("XFH.TO", input$xfh_to_quantity, input$xfh_to_price)))
+    if(! is.na(input$custom_position1_symbol) & input$custom_position1_symbol != "") {
+      output <- rbind(output, data.frame(scrape_yahoo(input$custom_position1_symbol, input$custom_position1_quantity, input$custom_position1_price)))
+    }
+    if(! is.na(input$custom_position2_symbol) & input$custom_position2_symbol != "") {
+      output <- rbind(output, data.frame(scrape_yahoo(input$custom_position2_symbol, input$custom_position2_quantity, input$custom_position2_price)))
+    }
+    if(! is.na(input$custom_position3_symbol) & input$custom_position3_symbol != "") {
+      output <- rbind(output, data.frame(scrape_yahoo(input$custom_position3_symbol, input$custom_position3_quantity, input$custom_position3_price)))
+    }
     
     # Return the results as a data frame
-    return(rbind(dgrc_to, reet, spem, sptm, xfh_to))
+    return(output)
   })
   
   # Add styling (coloring) to proportion based on whether the value is positive or negative 
@@ -157,37 +192,45 @@ server <- function(input, output, session) {
     }
   }
   
-  # The function that scrapes prices and dates data from Yahoo
-  scrape_yahoo <- function(symbol, url, quantity, manual_price, convert = FALSE) {
-    if(is.na(quantity) | ! is.numeric(quantity)) quantity <- 0
-    if(! is.na(manual_price) & is.numeric(manual_price) & manual_price > 0) {
+  # This function scrapes prices and dates from Yahoo
+  scrape_yahoo <- function(symbol, quantity = 0, manual_price = 0) {
+    # Sanitize/validate parameters
+    symbol <- toupper(symbol)
+    quantity <- ifelse(is.na(as.numeric(quantity)), 0, quantity)
+    manual_price <- ifelse(is.na(as.numeric(manual_price)), 0, manual_price)
+    
+    # Scrape Yahoo
+    webpage <- tryCatch(
+      read_html(paste0("https://finance.yahoo.com/quote/", symbol)),
+      error = function(e) { "URL does not exist" }
+    )
+    
+    # Isolate currency data
+    currency <- trimws(strsplit(html_text(html_nodes(webpage, "[id='quote-header-info']") %>% html_nodes("div"))[5], "[.]")[[1]][2])
+    currency <- substr(currency, nchar(currency) - 2, nchar(currency))
+    
+    # Compute/scrape price and date_time data conditionally 
+    if(manual_price > 0) {
       price <- manual_price
-      if(isTRUE(convert)) price <- price * cached$conversion
       date_time <- "Manual entry"
-      market_value <- price * as.integer(quantity)
-      return(data.frame(Symbol = symbol, Date = date_time, Quantity = quantity, Price = price, market_value = market_value, stringsAsFactors = FALSE))
     } else {
-      url <- suppressWarnings(tryCatch(
-        url(url, "rb"),
-        error = function(e) { NA }
-      ))
-      if(is.na(url)) {
-        return(data.frame(rep(NA, 5)))
-      } else {
-        webpage <- tryCatch(
-          read_html(url),
-          error = function(e) { "URL does not exist" }
-        )
-        close(url)
-        scraped_data <- html_text(html_nodes(webpage, "[id='quote-header-info']") %>% html_nodes("div"))[16]
-        price <- strsplit(scraped_data, "[.]")
-        price <- as.numeric(paste0(price[[1]][1], ".", substr(price[[1]][2], 1, 2)))
-        if(isTRUE(convert)) price <- price * cached$conversion
-        date_time <- paste0(strsplit(scraped_data, " ")[[1]][5:6], collapse = " ")
-        market_value <- price * as.integer(quantity)
-        return(data.frame(Symbol = symbol, Date = date_time, Quantity = quantity, Price = price, market_value = market_value, stringsAsFactors = FALSE))
-      }
+      scraped_data <- html_text(html_nodes(webpage, "[id='quote-header-info']") %>% html_nodes("div"))[16]
+      price <- strsplit(scraped_data, "[.]")
+      price <- as.numeric(paste0(price[[1]][1], ".", substr(price[[1]][2], 1, ifelse(symbol == "USDCAD=X", 4, 2))))
+      date_time <- paste0(strsplit(scraped_data, " ")[[1]][5:6], collapse = " ")
     }
+    
+    # Convert price to CAD if in USD
+    if(currency == "USD") price <- price * cached$usdcadx
+    
+    # Compute market value
+    market_value <- price * as.integer(quantity)
+    
+    # Compute whether security is in Questrade portfolio
+    in_portfolio <- ifelse(symbol %in% c("DGRC.TO", "REET", "SPEM", "SPTM", "XFH.TO"), "Yes", "No") 
+    
+    # Return row
+    return(data.frame(symbol = symbol, currency = currency, in_portfolio = in_portfolio, date_time = date_time, price = price, quantity = quantity, market_value = market_value))
   }
 }
 
